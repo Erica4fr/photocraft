@@ -186,7 +186,7 @@ id = "BUG-207-4"
 target = "edit.transform transforms a targeted alpha channel"
 status = "done"
 issue = 207
-note = "edit.transform takes target (pixels, mask, quickMask or {channel: i}; see its params doc in transform_cmds.rs); targeted_alpha_channel_transforms_alone moves channel 0 and asserts the layer bounds are untouched"
+note = "edit.transform follows a targeted alpha channel or Quick Mask (explicit target since #242, Channels panel target with no target/layer param since #2835); Edit > Transform > Rotate/Flip are routed to the target too; transforms_follow_the_targeted_alpha_channel"
 
 [[item]]
 id = "BUG-207-5"

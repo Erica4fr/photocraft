@@ -557,9 +557,10 @@ fn build() -> Vec<CommandSpec> {
             |s, p| {
                 let in_place = p.get("inPlace").and_then(Value::as_bool).unwrap_or(false);
                 if crate::layer_multi_cmds::multi(s, p) {
-                    return crate::layer_multi_cmds::duplicate_selected(s, in_place);
+                    return crate::layer_multi_cmds::duplicate_selected(s, in_place, "Duplicate Layers");
                 }
                 let id = layer_param(s, p)?;
+                let before = s.active().ok_or(EngineError::NoDocument)?.doc.clone();
                 let nid = s.edit("Duplicate Layer", |doc, active| {
                     let dup = layer_copy(doc, id)?;
                     let nid = doc.insert_above(Some(id), dup);
@@ -569,6 +570,7 @@ fn build() -> Vec<CommandSpec> {
                     *active = Some(nid);
                     Ok(nid)
                 })?;
+                crate::layer_multi_cmds::note_insert(s, &before);
                 Ok(json!({ "layer": nid.0 }))
             }
         ),
@@ -1135,6 +1137,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::gradient_fill_cmds::specs());
     v.extend(crate::solid_fill_cmds::specs());
     v.extend(crate::type_cmds::specs());
+    v.extend(crate::type_mask_cmds::specs());
     v.extend(crate::transform_cmds::specs());
     v.extend(crate::float_cmds::specs());
     v.extend(crate::vector_cmds::specs());
@@ -1152,11 +1155,13 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::retouch_cmds::specs());
     v.extend(crate::redeye_cmds::specs());
     v.extend(crate::image_cmds::specs());
+    v.extend(crate::perspective_crop_cmds::specs());
     v.extend(crate::selection_cmds::specs());
     v.extend(crate::magnetic_cmds::specs());
     v.extend(crate::select_extra_cmds::specs());
     v.extend(crate::paint_cmds::specs());
     v.extend(crate::extra_cmds::specs());
+    v.extend(crate::background_cmds::specs());
     v.extend(crate::file_cmds::specs());
     v.extend(crate::exr_cmds::specs());
     v.extend(crate::type_extra_cmds::specs());
@@ -1207,6 +1212,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::video_cmds::specs());
     v.extend(crate::jobs::specs());
     v.extend(crate::wia_cmds::specs());
+    v.extend(crate::rasterize_style_cmds::specs());
     v.extend(crate::variables_cmds::specs());
     v.extend(crate::plugin_cmds::specs());
     v.extend(crate::group_view_cmds::specs());
@@ -1269,6 +1275,11 @@ pub fn adjustment_kind(a: &Adjustment) -> &'static str {
 fn arrange(s: &mut Session, p: &Value, delta: i32) -> Result<Value> {
     let id = layer_param(s, p)?;
     s.edit("Arrange", |doc, _| {
+        // The Background stays at the bottom: it doesn't move and nothing goes below it.
+        let bg = crate::background_cmds::background_id(doc);
+        if bg == Some(id) {
+            return Err(EngineError::Other("the Background layer can't be moved".into()));
+        }
         let steps = match delta {
             i32::MAX => 10_000,
             i32::MIN => -10_000,
@@ -1278,6 +1289,10 @@ fn arrange(s: &mut Session, p: &Value, delta: i32) -> Result<Value> {
         let mut moved = false;
         for _ in 0..steps.abs() {
             if !doc.shift(id, dir) {
+                break;
+            }
+            if crate::background_cmds::keep_background_at_bottom(bg, doc).is_err() {
+                doc.shift(id, -dir);
                 break;
             }
             moved = true;
